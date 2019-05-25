@@ -55,66 +55,125 @@ int main(int argc, char** argv) {
 
     if (role == "client") {
         //Client code
-        /*ssh::Session session;
-        session.setOption(SSH_OPTIONS_HOST, vm["host"].as<std::string>().c_str());
-        session.setOption(SSH_OPTIONS_USER, vm["user"].as<std::string>().c_str());
-        session.setOption(SSH_OPTIONS_PORT, vm["port"].as<short>());*/
-
-        ssh_session session;
-        int rc;
-        session = ssh_new();
-        if (session == NULL)
-            exit(-1);
-        ssh_options_set(session, SSH_OPTIONS_HOST, "localhost");
-        ssh_options_set(session, SSH_OPTIONS_PORT_STR, "2222");
-        ssh_options_set(session, SSH_OPTIONS_USER, "valde");
-        rc = ssh_connect(session);
-        if (rc != SSH_OK)
+        //NEW
         {
-            fprintf(stderr, "Error connecting to localhost: %s\n",
-                    ssh_get_error(session));
-            exit(-1);
+            ssh::Session session;
+            session.setOption(SSH_OPTIONS_HOST, vm["host"].as<std::string>().c_str());
+            session.setOption(SSH_OPTIONS_USER, vm["user"].as<std::string>().c_str());
+            session.setOption(SSH_OPTIONS_PORT, vm["port"].as<short>());
+
+            try {
+                session.connect();
+            } catch (std::exception &e) {
+                std::cout << "Failed to connect:" << std::endl << e.what() << std::endl;
+                return -1;
+            }
+
+            auto sshResponse = session.userauthKbdint(nullptr, nullptr);
+
+            while (sshResponse == SSH_AUTH_INFO) {
+                auto name = std::string(ssh_userauth_kbdint_getname(session.getCSession()));
+                auto instruction = std::string(ssh_userauth_kbdint_getinstruction(session.getCSession()));
+                auto nprompts = ssh_userauth_kbdint_getnprompts(session.getCSession());
+
+                if (name.length() > 0) {
+                    std::cout << name << std::endl;
+                }
+                if (instruction.length() > 0) {
+                    std::cout << name << std::endl;
+                }
+
+                for (int iprompt = 0; iprompt < nprompts; iprompt++)
+                {
+                    const char *prompt;
+                    char echo;
+                    prompt = ssh_userauth_kbdint_getprompt(session.getCSession(), iprompt, &echo);
+                    if (echo)
+                    {
+                        char buffer[128], *ptr;
+                        printf("%s", prompt);
+                        if (fgets(buffer, sizeof(buffer), stdin) == NULL)
+                            return SSH_AUTH_ERROR;
+                        buffer[sizeof(buffer) - 1] = '\0';
+                        if ((ptr = strchr(buffer, '\n')) != NULL)
+                            *ptr = '\0';
+                        if (ssh_userauth_kbdint_setanswer(session.getCSession(), iprompt, buffer) < 0)
+                            return SSH_AUTH_ERROR;
+                        memset(buffer, 0, strlen(buffer));
+                    }
+                    else
+                    {
+                        char *ptr;
+                        ptr = getpass(prompt);
+                        if (ssh_userauth_kbdint_setanswer(session.getCSession(), iprompt, ptr) < 0)
+                            return SSH_AUTH_ERROR;
+                    }
+                }
+                sshResponse = session.userauthKbdint(nullptr, nullptr);
+            }
         }
 
-        rc = ssh_userauth_kbdint(session, NULL, NULL);
-        while (rc == SSH_AUTH_INFO)
+
+
+        //OLD
         {
-            const char *name, *instruction;
-            int nprompts, iprompt;
-            name = ssh_userauth_kbdint_getname(session);
-            instruction = ssh_userauth_kbdint_getinstruction(session);
-            nprompts = ssh_userauth_kbdint_getnprompts(session);
-            if (strlen(name) > 0)
-                printf("%s\n", name);
-            if (strlen(instruction) > 0)
-                printf("%s\n", instruction);
-            for (iprompt = 0; iprompt < nprompts; iprompt++)
+            /*
+            ssh_session session;
+            int rc;
+            session = ssh_new();
+            if (session == NULL)
+                exit(-1);
+            ssh_options_set(session, SSH_OPTIONS_HOST, "localhost");
+            ssh_options_set(session, SSH_OPTIONS_PORT_STR, "2222");
+            ssh_options_set(session, SSH_OPTIONS_USER, "valde");
+            rc = ssh_connect(session);
+            if (rc != SSH_OK)
             {
-                const char *prompt;
-                char echo;
-                prompt = ssh_userauth_kbdint_getprompt(session, iprompt, &echo);
-                if (echo)
-                {
-                    char buffer[128], *ptr;
-                    printf("%s", prompt);
-                    if (fgets(buffer, sizeof(buffer), stdin) == NULL)
-                        return SSH_AUTH_ERROR;
-                    buffer[sizeof(buffer) - 1] = '\0';
-                    if ((ptr = strchr(buffer, '\n')) != NULL)
-                        *ptr = '\0';
-                    if (ssh_userauth_kbdint_setanswer(session, iprompt, buffer) < 0)
-                        return SSH_AUTH_ERROR;
-                    memset(buffer, 0, strlen(buffer));
-                }
-                else
-                {
-                    char *ptr;
-                    ptr = getpass(prompt);
-                    if (ssh_userauth_kbdint_setanswer(session, iprompt, ptr) < 0)
-                        return SSH_AUTH_ERROR;
-                }
+                fprintf(stderr, "Error connecting to localhost: %s\n",
+                        ssh_get_error(session));
+                exit(-1);
             }
+
             rc = ssh_userauth_kbdint(session, NULL, NULL);
+            while (rc == SSH_AUTH_INFO)
+            {
+                const char *name, *instruction;
+                int nprompts, iprompt;
+                name = ssh_userauth_kbdint_getname(session);
+                instruction = ssh_userauth_kbdint_getinstruction(session);
+                nprompts = ssh_userauth_kbdint_getnprompts(session);
+                if (strlen(name) > 0)
+                    printf("%s\n", name);
+                if (strlen(instruction) > 0)
+                    printf("%s\n", instruction);
+                for (iprompt = 0; iprompt < nprompts; iprompt++)
+                {
+                    const char *prompt;
+                    char echo;
+                    prompt = ssh_userauth_kbdint_getprompt(session, iprompt, &echo);
+                    if (echo)
+                    {
+                        char buffer[128], *ptr;
+                        printf("%s", prompt);
+                        if (fgets(buffer, sizeof(buffer), stdin) == NULL)
+                            return SSH_AUTH_ERROR;
+                        buffer[sizeof(buffer) - 1] = '\0';
+                        if ((ptr = strchr(buffer, '\n')) != NULL)
+                            *ptr = '\0';
+                        if (ssh_userauth_kbdint_setanswer(session, iprompt, buffer) < 0)
+                            return SSH_AUTH_ERROR;
+                        memset(buffer, 0, strlen(buffer));
+                    }
+                    else
+                    {
+                        char *ptr;
+                        ptr = getpass(prompt);
+                        if (ssh_userauth_kbdint_setanswer(session, iprompt, ptr) < 0)
+                            return SSH_AUTH_ERROR;
+                    }
+                }
+                rc = ssh_userauth_kbdint(session, NULL, NULL);
+            }*/
         }
     } else {
         //Server code
